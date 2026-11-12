@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="phosphor-green">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Star Trek — Bridge Computer</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a href="#main-terminal" class="skip-link visually-hidden">Skip to bridge terminal</a>
+
+  <header class="bridge-header">
+    <div class="header-brand">
+      <h1>U.S.S. Enterprise — Super Star Trek</h1>
+      <p id="wasm-status" class="status-pill" aria-live="polite">
+        <span class="status-symbol" aria-hidden="true">◎</span>
+        <span id="wasm-status-text">Loading WASM core…</span>
+      </p>
+    </div>
+
+    <div class="header-controls">
+      <button type="button" id="new-game-btn" class="btn btn-primary">New Game</button>
+
+      <div class="control-inline">
+        <input type="checkbox" id="coord-fixed-toggle" name="coord_fixed">
+        <label for="coord-fixed-toggle">-f Horizontal X-Axis</label>
+      </div>
+
+      <div class="control-select">
+        <label for="theme-select">Theme</label>
+        <select id="theme-select" name="theme">
+          <option value="phosphor-green">Phosphor Green</option>
+          <option value="amber-crt">Amber CRT</option>
+          <option value="starfleet-modern">Starfleet Modern</option>
+        </select>
+      </div>
+
+      <nav class="header-actions" aria-label="Ship Reference and Records">
+        <button type="button" id="open-manual-btn" class="btn">Manual</button>
+        <button type="button" id="open-saves-btn" class="btn">Saves</button>
+        <button type="button" id="open-plaque-btn" class="btn">
+          Plaque <span id="plaque-badge" class="badge" hidden>1</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="bridge-layout">
+    <main id="main-terminal" class="terminal-pane" tabindex="-1">
+      <div class="pane-header">
+        <h2>Bridge Computer Terminal</h2>
+        <span id="coord-mode-label" class="mode-tag">Coords: Standard (Row, Col)</span>
+      </div>
+
+      <section id="boss-screen" class="boss-screen" aria-labelledby="boss-screen-title" hidden>
+        <h3 id="boss-screen-title">Emergency Exit / Boss Screen (<code>emsave.trk</code> saved)</h3>
+        <p>Bridge session suspended cleanly. Emergency game state has been stored to <code>emsave.trk</code> in local browser storage.</p>
+        <div class="boss-actions">
+          <button type="button" id="boss-resume-btn" class="btn btn-primary">Resume / New Session</button>
+        </div>
+      </section>
+
+      <pre id="terminal-output" class="terminal-output" role="region" aria-label="Ship Computer Output" tabindex="0"><code id="terminal-code">Initializing bridge computer...</code></pre>
+
+      <div id="continue-banner" class="prompt-banner prompt-continue" hidden>
+        <span class="prompt-banner-text">
+          <span aria-hidden="true">▸</span> Computer paused — press Space, Enter, or Continue to proceed.
+        </span>
+        <button type="button" id="continue-btn" class="btn btn-primary">Continue</button>
+      </div>
+
+      <div id="exited-banner" class="prompt-banner prompt-exited" hidden>
+        <span class="prompt-banner-text">
+          <span aria-hidden="true">■</span> Mission simulation concluded.
+        </span>
+        <button type="button" id="exited-new-game-btn" class="btn btn-primary">New Game</button>
+      </div>
+
+      <form id="cmd-form" class="cmd-form" autocomplete="off">
+        <label for="cmd-input" class="cmd-label">Command</label>
+        <div class="cmd-input-row">
+          <input
+            id="cmd-input"
+            name="command"
+            type="text"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            enterkeyhint="send"
+            placeholder="Enter command (e.g. srscan, move, phasers, help)"
+          >
+          <button type="submit" id="cmd-submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+
+      <section class="quick-commands" aria-labelledby="quick-cmds-heading">
+        <h3 id="quick-cmds-heading">Quick Commands</h3>
+        <div id="quick-cmds-grid" class="quick-cmds-grid">
+          <button type="button" class="quick-cmd-btn" data-cmd="SRSCAN">SRSCAN</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="LRSCAN">LRSCAN</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="CHART">CHART</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="STATUS">STATUS</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="DAMAGES">DAMAGES</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="PHASERS">PHASERS</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="PHOTONS">PHOTONS</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="MOVE">MOVE</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="IMPULSE">IMPULSE</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="SHIELDS">SHIELDS</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="DOCK">DOCK</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="ORBIT">ORBIT</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="SENSORS">SENSORS</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="TRANSPORT">TRANSPORT</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="CLOAK">CLOAK</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="CAPTURE">CAPTURE</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="PROBE">PROBE</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="REPORT">REPORT</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="SCORE">SCORE</button>
+          <button type="button" class="quick-cmd-btn" data-cmd="HELP">HELP</button>
+        </div>
+      </section>
+    </main>
+
+    <aside class="telemetry-hud" aria-labelledby="hud-heading">
+      <div class="hud-top">
+        <h2 id="hud-heading">Live Telemetry HUD</h2>
+        <div id="hud-condition" class="condition-badge condition-green">
+          <span id="hud-condition-symbol" aria-hidden="true">●</span>
+          <span id="hud-condition-text">GREEN</span>
+        </div>
+      </div>
+
+      <section class="hud-section" aria-labelledby="hud-vitals-heading">
+        <h3 id="hud-vitals-heading">Ship Status</h3>
+        <dl class="hud-kv-grid">
+          <div class="hud-kv"><dt>Ship</dt><dd id="hud-ship">Enterprise</dd></div>
+          <div class="hud-kv"><dt>Stardate</dt><dd id="hud-stardate">—</dd></div>
+          <div class="hud-kv"><dt>Time Left</dt><dd id="hud-time-left">—</dd></div>
+          <div class="hud-kv"><dt>Quadrant</dt><dd id="hud-quadrant">—</dd></div>
+          <div class="hud-kv"><dt>Sector</dt><dd id="hud-sector">—</dd></div>
+          <div class="hud-kv"><dt>Warp</dt><dd id="hud-warp">—</dd></div>
+          <div class="hud-kv"><dt>Torpedoes</dt><dd id="hud-torps">—</dd></div>
+          <div class="hud-kv"><dt>Life Support</dt><dd id="hud-life-support">—</dd></div>
+        </dl>
+
+        <div class="meters">
+          <div class="meter-row">
+            <div class="meter-label">
+              <label for="hud-energy-bar">Energy</label>
+              <span id="hud-energy-text" class="meter-value">0 / 5000</span>
+            </div>
+            <progress id="hud-energy-bar" max="5000" value="0"></progress>
+          </div>
+          <div class="meter-row">
+            <div class="meter-label">
+              <label for="hud-shield-bar">Shields <span id="hud-shield-state" class="shield-tag">DOWN</span></label>
+              <span id="hud-shield-text" class="meter-value">0 / 2500</span>
+            </div>
+            <progress id="hud-shield-bar" max="2500" value="0"></progress>
+          </div>
+        </div>
+      </section>
+
+      <section class="hud-section" aria-labelledby="hud-tactical-heading">
+        <h3 id="hud-tactical-heading">Tactical &amp; Fleet Counts</h3>
+        <dl class="hud-counts-grid">
+          <div class="hud-kv"><dt>Klingons</dt><dd id="hud-klingons">0</dd></div>
+          <div class="hud-kv"><dt>Cmdrs</dt><dd id="hud-commanders">0</dd></div>
+          <div class="hud-kv"><dt>Super-Cmdr</dt><dd id="hud-super-cmdr">0</dd></div>
+          <div class="hud-kv"><dt>Romulans</dt><dd id="hud-romulans">0</dd></div>
+          <div class="hud-kv"><dt>Starbases</dt><dd id="hud-bases">0</dd></div>
+          <div class="hud-kv"><dt>Probes</dt><dd id="hud-probes">0</dd></div>
+          <div class="hud-kv"><dt>Brig</dt><dd id="hud-brig">0 / 400</dd></div>
+          <div class="hud-kv"><dt>Captured</dt><dd id="hud-captured">0</dd></div>
+          <div class="hud-kv"><dt>Casualties</dt><dd id="hud-casualties">0</dd></div>
+        </dl>
+        <div id="hud-flags" class="hud-flags" aria-label="Mission State Flags">
+          <span id="flag-crystals" class="flag-chip">◇ No Crystals</span>
+          <span id="flag-orbit" class="flag-chip">○ Free Space</span>
+          <span id="flag-cloaked" class="flag-chip" hidden>◌ Cloaked</span>
+        </div>
+      </section>
+
+      <section class="hud-section" aria-labelledby="quad-grid-heading">
+        <div class="section-title-row">
+          <h3 id="quad-grid-heading">Quadrant Tactical Grid</h3>
+          <span class="hint-text">Click cell to insert coords</span>
+        </div>
+        <div id="quad-grid" class="quad-grid" role="group" aria-labelledby="quad-grid-heading"></div>
+      </section>
+
+      <section class="hud-section" aria-labelledby="hud-devices-heading">
+        <h3 id="hud-devices-heading">Ship Systems &amp; Damage</h3>
+        <ul id="devices-list" class="devices-list">
+          <li class="device-nominal">Awaiting sensor telemetry…</li>
+        </ul>
+      </section>
+
+      <section class="hud-section" aria-labelledby="hud-chart-heading">
+        <h3 id="hud-chart-heading">Star Chart Preview</h3>
+        <div class="chart-scroll">
+          <table id="star-chart-table" class="star-chart-table">
+            <caption class="visually-hidden">8 by 8 Galaxy Star Chart</caption>
+            <thead id="star-chart-head"></thead>
+            <tbody id="star-chart-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="bridge-footer">
+    <p>Super Star Trek WASM Bridge Console — <kbd>↑</kbd>/<kbd>↓</kbd> command history, click any sector cell to insert coordinates, saves stored locally in browser.</p>
+    <div id="sr-announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+  </footer>
+
+  <!-- Native Dialog 1: Operations Manual (SST.DOC) -->
+  <dialog id="manual-dialog" class="modal-dialog modal-wide" closedby="any" aria-labelledby="manual-dialog-title">
+    <div class="dialog-header">
+      <h2 id="manual-dialog-title">Starfleet Operations Manual (SST.DOC)</h2>
+      <form method="dialog">
+        <button type="submit" class="btn dialog-close-btn">Close</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <search class="manual-controls">
+        <form id="manual-filter-form" class="manual-filter-form">
+          <div class="field-group">
+            <label for="manual-section-select">Section</label>
+            <select id="manual-section-select" name="section">
+              <option value="ALL">All Sections</option>
+            </select>
+          </div>
+          <div class="field-group field-grow">
+            <label for="manual-search-input">Filter text</label>
+            <input id="manual-search-input" name="query" type="search" placeholder="Search commands, rules, scoring…" autofocus>
+          </div>
+        </form>
+      </search>
+      <p id="manual-match-status" class="dialog-status" aria-live="polite"></p>
+      <pre id="manual-content" class="manual-pre" tabindex="0">Loading SST.DOC…</pre>
+    </div>
+    <div class="dialog-footer">
+      <form method="dialog">
+        <button type="submit" class="btn btn-primary">Close</button>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Native Dialog 2: Frozen Games (.trk) Manager -->
+  <dialog id="saves-dialog" class="modal-dialog" closedby="any" aria-labelledby="saves-dialog-title">
+    <div class="dialog-header">
+      <h2 id="saves-dialog-title">Frozen Games (<code>.trk</code>) Manager</h2>
+      <form method="dialog">
+        <button type="submit" class="btn dialog-close-btn">Close</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <div class="upload-box">
+        <label for="upload-trk-input">Upload <code>.trk</code> Save File</label>
+        <input id="upload-trk-input" type="file" accept=".trk,text/plain,application/json" autofocus>
+      </div>
+      <p id="saves-status" class="dialog-status" aria-live="polite"></p>
+      <ul id="saves-list" class="saves-list"></ul>
+    </div>
+    <div class="dialog-footer">
+      <form method="dialog">
+        <button type="submit" class="btn btn-primary">Close</button>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Native Dialog 3: Commodore Emeritus Citation Plaque -->
+  <dialog id="plaque-dialog" class="modal-dialog modal-wide" closedby="any" aria-labelledby="plaque-dialog-title">
+    <div class="dialog-header">
+      <h2 id="plaque-dialog-title">Commodore Emeritus Citation Plaque</h2>
+      <form method="dialog">
+        <button type="submit" class="btn dialog-close-btn">Close</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <p id="plaque-empty-msg" class="dialog-status">No citation plaque earned yet in this session. Achieve victory to receive your 132-column Commodore Emeritus Citation!</p>
+      <pre id="plaque-content" class="plaque-pre" tabindex="0" hidden></pre>
+    </div>
+    <div class="dialog-footer dialog-footer-split">
+      <div class="dialog-actions-left">
+        <button type="button" id="plaque-download-btn" class="btn" disabled>Download .txt</button>
+        <button type="button" id="plaque-print-btn" class="btn" disabled>Print</button>
+      </div>
+      <form method="dialog">
+        <button type="submit" class="btn btn-primary" autofocus>Close</button>
+      </form>
+    </div>
+  </dialog>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

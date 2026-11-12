@@ -1,0 +1,51 @@
+flowchart LR
+    subgraph ClientTier["Tier 1: Server and Browser UI"]
+        Server["src/bin/server.rs - Pure-std TCP HTTP Server (:8080)"]
+        WebUI["web/index.html + styles.css - Bridge Console and Dialogs"]
+        AppJs["web/app.js - WASM Host, HUD Renderer, localStorage"]
+        WebDoc["web/sst.doc - Reference Manual"]
+    end
+
+    subgraph RuntimeTier["Tier 2: WASM Bridge and Session"]
+        WasmRs["src/wasm.rs - C-ABI (trek_init, trek_step, trek_set_coord_fixed, trek_import_save)"]
+        TrekSession["src/session.rs::TrekSession - Single-Turn Future Poller (Waker::noop)"]
+        GameMain["game_main + makemoves - Lifecycle and 37-Command Dispatcher"]
+        StepResp["StepResponse + HudState - JSON Delta and Anti-Cheat Telemetry"]
+    end
+
+    subgraph EngineTier["Tier 3: Gameplay Engine Modules (src/)"]
+        Setup["setup.rs: prelim, setup, newqad, abandn, freeze/thaw (.trk)"]
+        Reports["reports.rs: srscan, lrscan, chart, report, dreprt, eta"]
+        Moving["moving.rs: warp, impuls, lmove, dock, setwrp, atover, timwrp, probe, help"]
+        Battle["battle.rs: phasers, photon, torpedo, sheild, cloak, capture, attack, deadkl, ram"]
+        Events["events.rs: events, waiting, nova, snova"]
+        Ai["ai.rs: movcom, scom, movetho"]
+        Planets["planets.rs: orbit, sensor, beam, mine, usecrystals, shuttle, preport, deathray"]
+        Finish["finish.rs: finish, score, 132-col plaque, dstrct, kaboom"]
+        Help["help.rs + assets/sst.doc: COMMANDS, list_commands, helpme, debugme"]
+    end
+
+    subgraph CoreTier["Tier 4: Shared Foundation (src/)"]
+        Scanner["scanner.rs - scan, ja, parse_c_double_prefix, ScanToken"]
+        Io["io.rs - IoHandle, PromptType, InputEvent, prout, pause, skip"]
+        State["state.rs - GameState, GalaxyData, ShipVars, Planet, FinType"]
+        Rng["rng.rs - MacOsRng (31-bit Park-Miller PRNG)"]
+    end
+
+    Server -->|"Static UI and manual"| WebUI
+    Server -->|"Manual"| WebDoc
+    Server -->|"Serves web/trek.wasm"| WasmRs
+    WebUI --> AppJs
+    AppJs <-->|"UTF-8 buffers and JSON"| WasmRs
+    WasmRs --> TrekSession
+    TrekSession -->|"Polls Future"| GameMain
+    TrekSession -->|"Serializes"| StepResp
+    StepResp -->|"Reads telemetry"| State
+
+    GameMain --> Setup & Reports & Moving & Battle & Events & Ai & Planets & Finish & Help
+    EngineTier -->|"Tokenizes input"| Scanner
+    EngineTier -->|"Console I/O and suspension"| Io
+    EngineTier -->|"Reads and mutates"| State
+    Scanner --> Io
+    Io --> State
+    State --> Rng

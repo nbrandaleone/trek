@@ -1,0 +1,17 @@
+[package]
+name = "trek"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "trek"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "trek"
+path = "src/bin/server.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
