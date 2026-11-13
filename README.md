@@ -1,5 +1,7 @@
 # Trek — Super Star Trek (Rust + WebAssembly)
 
+![Super Star Trek](docs/super-star-trek.png)
+
 **Trek** is a zero-dependency Rust and WebAssembly port of Tom Almy's *Super Star Trek for Mac OS* (`https://almy.us/sst.html`), featuring an interactive browser terminal, live Bridge Telemetry HUD, and an embedded pure-`std` HTTP server.
 
 ## Overview & Attribution
