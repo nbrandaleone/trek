@@ -7,39 +7,90 @@ use std::process;
 use std::thread;
 use std::time::Duration;
 
-fn parse_port() -> Result<u16, String> {
-    let mut args = env::args().skip(1);
+#[derive(Debug, PartialEq, Eq)]
+struct ServerConfig {
+    host: String,
+    port: u16,
+}
+
+fn parse_config_from<I>(
+    args: I,
+    env_host: Option<&str>,
+    env_port: Option<&str>,
+) -> Result<ServerConfig, String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut args = args.into_iter();
+    let mut cli_host: Option<String> = None;
+    let mut cli_port: Option<u16> = None;
+
     while let Some(arg) = args.next() {
         if arg == "--port" || arg == "-p" {
             let val = args
                 .next()
                 .ok_or_else(|| format!("missing value after {arg}"))?;
-            return val
+            let parsed = val
                 .parse::<u16>()
-                .map_err(|_| format!("invalid port number: {val}"));
+                .map_err(|_| format!("invalid port number: {val}"))?;
+            cli_port = Some(parsed);
+            continue;
         }
         if let Some(val) = arg.strip_prefix("--port=") {
-            return val
+            let parsed = val
                 .parse::<u16>()
-                .map_err(|_| format!("invalid port number: {val}"));
+                .map_err(|_| format!("invalid port number: {val}"))?;
+            cli_port = Some(parsed);
+            continue;
+        }
+        if arg == "--host" {
+            let val = args
+                .next()
+                .ok_or_else(|| format!("missing value after {arg}"))?;
+            if val.trim().is_empty() {
+                return Err(String::from("host cannot be empty"));
+            }
+            cli_host = Some(val);
+            continue;
+        }
+        if let Some(val) = arg.strip_prefix("--host=") {
+            if val.trim().is_empty() {
+                return Err(String::from("host cannot be empty"));
+            }
+            cli_host = Some(val.to_string());
+            continue;
         }
         if arg == "--help" || arg == "-h" {
-            println!("Usage: trek [--port <PORT>]");
+            println!("Usage: trek [--host <HOST>] [--port <PORT>]");
             process::exit(0);
         }
         return Err(format!("unknown argument: {arg}"));
     }
 
-    if let Ok(val) = env::var("PORT") {
-        if !val.trim().is_empty() {
-            return val
-                .trim()
-                .parse::<u16>()
-                .map_err(|_| format!("invalid PORT environment variable: {val}"));
-        }
-    }
+    let host = if let Some(h) = cli_host {
+        h
+    } else if let Some(val) = env_host.map(str::trim).filter(|v| !v.is_empty()) {
+        val.to_string()
+    } else {
+        String::from("127.0.0.1")
+    };
 
-    Ok(8080)
+    let port = if let Some(p) = cli_port {
+        p
+    } else if let Some(val) = env_port.map(str::trim).filter(|v| !v.is_empty()) {
+        val.parse::<u16>()
+            .map_err(|_| format!("invalid PORT environment variable: {val}"))?
+    } else {
+        8080
+    };
+
+    Ok(ServerConfig { host, port })
+}
+
+fn parse_config() -> Result<ServerConfig, String> {
+    let env_host = env::var("HOST").ok();
+    let env_port = env::var("PORT").ok();
+    parse_config_from(env::args().skip(1), env_host.as_deref(), env_port.as_deref())
 }
 
 fn percent_decode(input: &str) -> Option<String> {
@@ -230,9 +281,17 @@ fn handle_client(mut stream: TcpStream, web_root: PathBuf) {
     }
 }
 
+fn format_bind_addr(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 fn main() {
-    let port = match parse_port() {
-        Ok(p) => p,
+    let config = match parse_config() {
+        Ok(cfg) => cfg,
         Err(err) => {
             eprintln!("Error: {err}");
             process::exit(2);
@@ -244,7 +303,7 @@ fn main() {
         eprintln!("Warning: ./web directory does not exist in current working directory");
     }
 
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format_bind_addr(&config.host, config.port);
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
         Err(err) => {
@@ -265,5 +324,51 @@ fn main() {
                 eprintln!("Accept error: {err}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_localhost_8080() {
+        let cfg = parse_config_from(Vec::<String>::new(), None, None).unwrap();
+        assert_eq!(
+            cfg,
+            ServerConfig {
+                host: String::from("127.0.0.1"),
+                port: 8080,
+            }
+        );
+    }
+
+    #[test]
+    fn reads_host_and_port_from_env() {
+        let cfg = parse_config_from(Vec::<String>::new(), Some("0.0.0.0"), Some("3000")).unwrap();
+        assert_eq!(
+            cfg,
+            ServerConfig {
+                host: String::from("0.0.0.0"),
+                port: 3000,
+            }
+        );
+    }
+
+    #[test]
+    fn cli_overrides_env() {
+        let args = vec![
+            String::from("--host=127.0.0.1"),
+            String::from("--port"),
+            String::from("9090"),
+        ];
+        let cfg = parse_config_from(args, Some("0.0.0.0"), Some("3000")).unwrap();
+        assert_eq!(
+            cfg,
+            ServerConfig {
+                host: String::from("127.0.0.1"),
+                port: 9090,
+            }
+        );
     }
 }

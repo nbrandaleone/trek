@@ -97,6 +97,9 @@ Use the provided [`Makefile`](file:///Users/nbrand/projects/trek/Makefile) for c
 | `make build` (or `make all`) | Build `web/trek.wasm` and the release `trek` HTTP server binary |
 | `make start` (or `make run`) | Build WASM and start the web server at `http://127.0.0.1:8080` |
 | `make start PORT=3000` | Build WASM and start the web server on a custom port |
+| `make docker` (or `make docker-run`) | Build the Docker image and launch the container on port `8080` (`PORT=3000` to override) |
+| `make docker-build` | Build the `trek` Docker image |
+| `make docker-stop` | Stop the running `trek` Docker container |
 | `make wasm` | Compile `web/trek.wasm` via [`scripts/build_web.sh`](file:///Users/nbrand/projects/trek/scripts/build_web.sh) |
 | `make test` (or `make unit-test`) | Run all Cargo unit, integration, and regression tests |
 | `make check` | Run `cargo check` (native + `wasm32-unknown-unknown`) and `node --check web/app.js` |
