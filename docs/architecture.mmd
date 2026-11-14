@@ -1,51 +1,54 @@
-flowchart LR
-    subgraph ClientTier["Tier 1: Server and Browser UI"]
-        Server["src/bin/server.rs - Pure-std TCP HTTP Server (:8080)"]
-        WebUI["web/index.html + styles.css - Bridge Console and Dialogs"]
-        AppJs["web/app.js - WASM Host, HUD Renderer, localStorage"]
-        WebDoc["web/sst.doc - Reference Manual"]
+flowchart TB
+    subgraph Host["1․ HTTP Server &amp; Static Asset Delivery (src/bin/server.rs, web/sst.doc)"]
+        direction LR
+        Launch(["Launch Binary (trek)<br/>Default bind 127.0.0.1:8080"])
+        CliCfg["CLI &amp; Env Config Parser<br/>--host / --host= (HOST)<br/>--port, -p / --port= (PORT) | --help, -h"]
+        HttpSrv["Pure-std TCP HTTP/1.1 Server<br/>Thread-per-conn GET &amp; HEAD<br/>percent_decode() + canonicalize() guard<br/>Serves index.html, styles.css, app.js, sst.doc, trek.wasm"]
+
+        Launch --> CliCfg
+        CliCfg -->|"TcpListener::bind(addr)"| HttpSrv
     end
 
-    subgraph RuntimeTier["Tier 2: WASM Bridge and Session"]
-        WasmRs["src/wasm.rs - C-ABI (trek_init, trek_step, trek_set_coord_fixed, trek_import_save)"]
-        TrekSession["src/session.rs::TrekSession - Single-Turn Future Poller (Waker::noop)"]
-        GameMain["game_main + makemoves - Lifecycle and 37-Command Dispatcher"]
-        StepResp["StepResponse + HudState - JSON Delta and Anti-Cheat Telemetry"]
+    subgraph UI["2․ Browser Terminal, Live HUD &amp; Persistence (web/index.html, web/styles.css, web/app.js)"]
+        direction LR
+        Console["Bridge Terminal &amp; Input Controls<br/>Line/Key prompt modes + 200-cmd history<br/>20 Quick-Command buttons + Boss Screen<br/>Themes: phosphor-green, amber-crt, starfleet-modern"]
+        HudView["Live Telemetry HUD &amp; Tactical Grids<br/>Condition badge, Energy/Shield bars, 9 fleet counters<br/>Clickable 10x10 Sector Grid (-f X/Y coord toggle)<br/>8x8 Star Chart + 16-Device Damage list"]
+        Modals["Browser localStorage &amp; 3 Native &lt;dialog&gt;s<br/>Manual (SST.DOC section/text filter)<br/>Saves (.trk upload, trek.save.*, emsave.trk)<br/>Plaque (132-col Emeritus download &amp; print)"]
+
+        Console <-->|"Click sector -&gt; coords<br/>-f coordFixed sync"| HudView
+        HudView <-->|"trek.save.* / plaque /<br/>SST.DOC dialogs"| Modals
     end
 
-    subgraph EngineTier["Tier 3: Gameplay Engine Modules (src/)"]
-        Setup["setup.rs: prelim, setup, newqad, abandn, freeze/thaw (.trk)"]
-        Reports["reports.rs: srscan, lrscan, chart, report, dreprt, eta"]
-        Moving["moving.rs: warp, impuls, lmove, dock, setwrp, atover, timwrp, probe, help"]
-        Battle["battle.rs: phasers, photon, torpedo, sheild, cloak, capture, attack, deadkl, ram"]
-        Events["events.rs: events, waiting, nova, snova"]
-        Ai["ai.rs: movcom, scom, movetho"]
-        Planets["planets.rs: orbit, sensor, beam, mine, usecrystals, shuttle, preport, deathray"]
-        Finish["finish.rs: finish, score, 132-col plaque, dstrct, kaboom"]
-        Help["help.rs + assets/sst.doc: COMMANDS, list_commands, helpme, debugme"]
+    subgraph Bridge["3․ WASM C-ABI &amp; Stackless Coroutine Session (src/wasm.rs, src/session.rs, src/io.rs)"]
+        direction LR
+        WasmAbi["WASM C-ABI (src/wasm.rs)<br/>RefCell&lt;Option&lt;WasmRuntime&gt;&gt;<br/>trek_alloc / trek_dealloc · trek_init / trek_step<br/>trek_set_coord_fixed · trek_import_save<br/>trek_response_ptr / trek_response_len"]
+        PollHub{"TrekSession::poll_once()<br/>Pin&lt;Box&lt;dyn Future&gt;&gt;<br/>+ Waker::noop()"}
+        IoBridge["Coroutine I/O &amp; Telemetry (io.rs, session.rs)<br/>IoHandle Rc&lt;RefCell&lt;IoShared&gt;&gt; (read_line / getch)<br/>Swaps GameState via empty_placeholder()<br/>StepResponse::to_json() + anti-cheat HudState<br/>(masks distant sectors when DSRSENS &gt; 0)"]
+        SessionEnd(["Session Concluded<br/>park_finished() -&gt; Exited<br/>or EMEXIT (emsave.trk)"])
+
+        WasmAbi -->|"new() / step()"| PollHub
+        PollHub <-->|"Pending (Line | Key)<br/>or Ready(())"| IoBridge
+        IoBridge -.->|"No replay / EMEXIT"| SessionEnd
     end
 
-    subgraph CoreTier["Tier 4: Shared Foundation (src/)"]
-        Scanner["scanner.rs - scan, ja, parse_c_double_prefix, ScanToken"]
-        Io["io.rs - IoHandle, PromptType, InputEvent, prout, pause, skip"]
-        State["state.rs - GameState, GalaxyData, ShipVars, Planet, FinType"]
-        Rng["rng.rs - MacOsRng (31-bit Park-Miller PRNG)"]
+    subgraph Engine["4․ Zero-Dependency Gameplay Engine &amp; Foundation (src/lib.rs, src/scanner.rs, src/state.rs, src/rng.rs)"]
+        direction LR
+        Lifecycle["Game Lifecycle &amp; Turn Dispatcher<br/>game_main() + makemoves() (session.rs)<br/>prelim, setup, newqad, freeze/thaw (setup.rs)<br/>29 prefix + 8 exact commands (COMMANDS[37])"]
+        Subsystems["Domain Gameplay Subsystems<br/>moving.rs · battle.rs · ai.rs<br/>events.rs · planets.rs · reports.rs<br/>finish.rs (22 FinType, plaque) · help.rs (SST_DOC)"]
+        Foundation["Deterministic Core Foundation (std only)<br/>scanner.rs: scan(), ja(), parse_c_double_prefix()<br/>state.rs: GameState, GalaxyData, ShipVars, Planet<br/>rng.rs: MacOsRng (31-bit Park-Miller LCG)"]
+
+        Lifecycle -->|"Dispatches commands &amp; events"| Subsystems
+        Subsystems <-->|"Tokenizes input, mutates state,<br/>draws deterministic PRNG"| Foundation
     end
 
-    Server -->|"Static UI and manual"| WebUI
-    Server -->|"Manual"| WebDoc
-    Server -->|"Serves web/trek.wasm"| WasmRs
-    WebUI --> AppJs
-    AppJs <-->|"UTF-8 buffers and JSON"| WasmRs
-    WasmRs --> TrekSession
-    TrekSession -->|"Polls Future"| GameMain
-    TrekSession -->|"Serializes"| StepResp
-    StepResp -->|"Reads telemetry"| State
+    Host -->|"HTTP GET / + ./trek.wasm + ./sst.doc"| UI
+    UI <-->|"trek_step() UTF-8 buffers &lt;-&gt; StepResponse JSON (hud, saves_updated, plaques_updated)"| Bridge
+    UI -.->|"trek_import_save(.trk) &amp; trek_set_coord_fixed(-f)"| Bridge
+    Bridge <-->|"Polls pinned Future &lt;-&gt; parks GameState at read_line / getch"| Engine
 
-    GameMain --> Setup & Reports & Moving & Battle & Events & Ai & Planets & Finish & Help
-    EngineTier -->|"Tokenizes input"| Scanner
-    EngineTier -->|"Console I/O and suspension"| Io
-    EngineTier -->|"Reads and mutates"| State
-    Scanner --> Io
-    Io --> State
-    State --> Rng
+    classDef pill fill:#dcfce7,stroke:#16a34a,color:#052e16;
+    classDef hub fill:#fef3c7,stroke:#d97706,color:#451a03;
+    classDef core fill:#f1f5f9,stroke:#475569,color:#0f172a;
+    class Launch,SessionEnd pill;
+    class PollHub hub;
+    class Foundation core;
