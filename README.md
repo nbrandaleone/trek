@@ -6,77 +6,80 @@
 
 ## Overview & Attribution
 
-This project converts the classic ANSI C codebase of *Super Star Trek for Mac OS* (preserved in [`c_src/`](file:///Users/nbrand/projects/trek/c_src)) into safe, modular Rust and exposes it to the browser via WebAssembly:
+This project converts the classic ANSI C codebase of *Super Star Trek for Mac OS* (preserved in [`c_src/`](c_src/)) into safe, modular Rust and exposes it to the browser via WebAssembly:
 
 - **Source Template**: Tom Almy's *Super Star Trek for Mac OS* (`SCORE`, `CAPTURE`, and `CLOAKING` options enabled).
 - **Zero External Crates**: Both the `trek` library (`cdylib` + `rlib`) and the `trek` HTTP server binary compile using only the Rust standard library (`std`).
 
 ## Architecture Highlights
 
-- **Zero-Dependency Rust Game Engine ([`src/`](file:///Users/nbrand/projects/trek/src))**: Faithful port of all C modules—universe setup, reports/scanners, navigation, phasers/torpedoes/combat, random events, Klingon/Romulan/Tholian AI, planets/mining/crystals, endgame scoring, and help.
-- **Step-Driven Execution ([`src/session.rs`](file:///Users/nbrand/projects/trek/src/session.rs))**: Uses a single-threaded `async`/`await` generator (`TrekSession`) built on `std::task` so the blocking prompt-driven C game flow pauses cleanly whenever console input or a pause key is needed, without rewriting the game loop as a manual state machine or spawning threads in WASM.
-- **Deterministic macOS RNG ([`src/rng.rs`](file:///Users/nbrand/projects/trek/src/rng.rs))**: Implements the 31-bit Park–Miller generator (`MacOsRng`, matching `osx.c` `Rand()`) alongside C-compatible tournament seeding so tournament seeds match expected layouts and behavior.
-- **WebAssembly Bridge ([`src/wasm.rs`](file:///Users/nbrand/projects/trek/src/wasm.rs))**: Exposes a C-ABI bridge compiled into `web/trek.wasm` for session initialization, input feeding, freeze/thaw save-file serialization (`.trk`), and live telemetry JSON snapshots.
-- **Web Interface ([`web/`](file:///Users/nbrand/projects/trek/web))**: Browser terminal (`index.html`, `styles.css`, `app.js`) with a live Bridge Telemetry HUD (stardate, shields, energy, torpedoes, ship status, crew/time remaining), quick-command helpers, freeze/thaw `.trk` file support, and an integrated `sst.doc` manual viewer.
-- **Pure-`std` HTTP Server ([`src/bin/server.rs`](file:///Users/nbrand/projects/trek/src/bin/server.rs))**: Lightweight TCP HTTP server serving `./web` on `127.0.0.1:8080` (configurable via `--port <N>` or `PORT`).
+- **Zero-Dependency Rust Game Engine ([`src/`](src/))**: Faithful port of all C modules—universe setup, reports/scanners, navigation, phasers/torpedoes/combat, random events, Klingon/Romulan/Tholian AI, planets/mining/crystals, endgame scoring, and help.
+- **Step-Driven Execution ([`src/session.rs`](src/session.rs))**: Uses a single-threaded `async`/`await` generator (`TrekSession`) built on `std::task` so the blocking prompt-driven C game flow pauses cleanly whenever console input or a pause key is needed, without rewriting the game loop as a manual state machine or spawning threads in WASM.
+- **Deterministic macOS RNG ([`src/rng.rs`](src/rng.rs))**: Implements the 31-bit Park–Miller generator (`MacOsRng`, matching `osx.c` `Rand()`) alongside C-compatible tournament seeding so tournament seeds match expected layouts and behavior.
+- **WebAssembly Bridge ([`src/wasm.rs`](src/wasm.rs))**: Exposes a C-ABI bridge compiled into `web/trek.wasm` for session initialization, input feeding, freeze/thaw save-file serialization (`.trk`), and live telemetry JSON snapshots.
+- **Web Interface ([`web/`](web/))**: Browser terminal (`index.html`, `styles.css`, `app.js`) with a live Bridge Telemetry HUD (stardate, shields, energy, torpedoes, ship status, crew/time remaining), quick-command helpers, freeze/thaw `.trk` file support, and an integrated `sst.doc` manual viewer.
+- **Pure-`std` HTTP Server ([`src/bin/server.rs`](src/bin/server.rs))**: Lightweight TCP HTTP server serving `./web` on `127.0.0.1:8080` (configurable via `--host <ADDR>` / `HOST` and `--port <N>` / `PORT`).
 
 ### Architecture Diagram
 
 ```mermaid
-flowchart LR
-    subgraph ClientTier["Tier 1: Server and Browser UI"]
-        Server["src/bin/server.rs - Pure-std TCP HTTP Server (:8080)"]
-        WebUI["web/index.html + styles.css - Bridge Console and Dialogs"]
-        AppJs["web/app.js - WASM Host, HUD Renderer, localStorage"]
-        WebDoc["web/sst.doc - Reference Manual"]
+flowchart TB
+    subgraph Host["1․ HTTP Server &amp; Static Asset Delivery (src/bin/server.rs, web/sst.doc)"]
+        direction LR
+        Launch(["Launch Binary (trek)<br/>Default bind 127.0.0.1:8080"])
+        CliCfg["CLI &amp; Env Config Parser<br/>--host / --host= (HOST)<br/>--port, -p / --port= (PORT) | --help, -h"]
+        HttpSrv["Pure-std TCP HTTP/1.1 Server<br/>Thread-per-conn GET &amp; HEAD<br/>percent_decode() + canonicalize() guard<br/>Serves index.html, styles.css, app.js, sst.doc, trek.wasm"]
+
+        Launch --> CliCfg
+        CliCfg -->|"TcpListener::bind(addr)"| HttpSrv
     end
 
-    subgraph RuntimeTier["Tier 2: WASM Bridge and Session"]
-        WasmRs["src/wasm.rs - C-ABI (trek_init, trek_step, trek_set_coord_fixed, trek_import_save)"]
-        TrekSession["src/session.rs::TrekSession - Single-Turn Future Poller (Waker::noop)"]
-        GameMain["game_main + makemoves - Lifecycle and 37-Command Dispatcher"]
-        StepResp["StepResponse + HudState - JSON Delta and Anti-Cheat Telemetry"]
+    subgraph UI["2․ Browser Terminal, Live HUD &amp; Persistence (web/index.html, web/styles.css, web/app.js)"]
+        direction LR
+        Console["Bridge Terminal &amp; Input Controls<br/>Line/Key prompt modes + 200-cmd history<br/>20 Quick-Command buttons + Boss Screen<br/>Themes: phosphor-green, amber-crt, starfleet-modern"]
+        HudView["Live Telemetry HUD &amp; Tactical Grids<br/>Condition badge, Energy/Shield bars, 9 fleet counters<br/>Clickable 10x10 Sector Grid (-f X/Y coord toggle)<br/>8x8 Star Chart + 16-Device Damage list"]
+        Modals["Browser localStorage &amp; 3 Native &lt;dialog&gt;s<br/>Manual (SST.DOC section/text filter)<br/>Saves (.trk upload, trek.save.*, emsave.trk)<br/>Plaque (132-col Emeritus download &amp; print)"]
+
+        Console <-->|"Click sector -&gt; coords<br/>-f coordFixed sync"| HudView
+        HudView <-->|"trek.save.* / plaque /<br/>SST.DOC dialogs"| Modals
     end
 
-    subgraph EngineTier["Tier 3: Gameplay Engine Modules (src/)"]
-        Setup["setup.rs: prelim, setup, newqad, abandn, freeze/thaw (.trk)"]
-        Reports["reports.rs: srscan, lrscan, chart, report, dreprt, eta"]
-        Moving["moving.rs: warp, impuls, lmove, dock, setwrp, atover, timwrp, probe, help"]
-        Battle["battle.rs: phasers, photon, torpedo, sheild, cloak, capture, attack, deadkl, ram"]
-        Events["events.rs: events, waiting, nova, snova"]
-        Ai["ai.rs: movcom, scom, movetho"]
-        Planets["planets.rs: orbit, sensor, beam, mine, usecrystals, shuttle, preport, deathray"]
-        Finish["finish.rs: finish, score, 132-col plaque, dstrct, kaboom"]
-        Help["help.rs + assets/sst.doc: COMMANDS, list_commands, helpme, debugme"]
+    subgraph Bridge["3․ WASM C-ABI &amp; Stackless Coroutine Session (src/wasm.rs, src/session.rs, src/io.rs)"]
+        direction LR
+        WasmAbi["WASM C-ABI (src/wasm.rs)<br/>RefCell&lt;Option&lt;WasmRuntime&gt;&gt;<br/>trek_alloc / trek_dealloc · trek_init / trek_step<br/>trek_set_coord_fixed · trek_import_save<br/>trek_response_ptr / trek_response_len"]
+        PollHub{"TrekSession::poll_once()<br/>Pin&lt;Box&lt;dyn Future&gt;&gt;<br/>+ Waker::noop()"}
+        IoBridge["Coroutine I/O &amp; Telemetry (io.rs, session.rs)<br/>IoHandle Rc&lt;RefCell&lt;IoShared&gt;&gt; (read_line / getch)<br/>Swaps GameState via empty_placeholder()<br/>StepResponse::to_json() + anti-cheat HudState<br/>(masks distant sectors when DSRSENS &gt; 0)"]
+        SessionEnd(["Session Concluded<br/>park_finished() -&gt; Exited<br/>or EMEXIT (emsave.trk)"])
+
+        WasmAbi -->|"new() / step()"| PollHub
+        PollHub <-->|"Pending (Line | Key)<br/>or Ready(())"| IoBridge
+        IoBridge -.->|"No replay / EMEXIT"| SessionEnd
     end
 
-    subgraph CoreTier["Tier 4: Shared Foundation (src/)"]
-        Scanner["scanner.rs - scan, ja, parse_c_double_prefix, ScanToken"]
-        Io["io.rs - IoHandle, PromptType, InputEvent, prout, pause, skip"]
-        State["state.rs - GameState, GalaxyData, ShipVars, Planet, FinType"]
-        Rng["rng.rs - MacOsRng (31-bit Park-Miller PRNG)"]
+    subgraph Engine["4․ Zero-Dependency Gameplay Engine &amp; Foundation (src/lib.rs, src/scanner.rs, src/state.rs, src/rng.rs)"]
+        direction LR
+        Lifecycle["Game Lifecycle &amp; Turn Dispatcher<br/>game_main() + makemoves() (session.rs)<br/>prelim, setup, newqad, freeze/thaw (setup.rs)<br/>29 prefix + 8 exact commands (COMMANDS[37])"]
+        Subsystems["Domain Gameplay Subsystems<br/>moving.rs · battle.rs · ai.rs<br/>events.rs · planets.rs · reports.rs<br/>finish.rs (22 FinType, plaque) · help.rs (SST_DOC)"]
+        Foundation["Deterministic Core Foundation (std only)<br/>scanner.rs: scan(), ja(), parse_c_double_prefix()<br/>state.rs: GameState, GalaxyData, ShipVars, Planet<br/>rng.rs: MacOsRng (31-bit Park-Miller LCG)"]
+
+        Lifecycle -->|"Dispatches commands &amp; events"| Subsystems
+        Subsystems <-->|"Tokenizes input, mutates state,<br/>draws deterministic PRNG"| Foundation
     end
 
-    Server -->|"Static UI and manual"| WebUI
-    Server -->|"Manual"| WebDoc
-    Server -->|"Serves web/trek.wasm"| WasmRs
-    WebUI --> AppJs
-    AppJs <-->|"UTF-8 buffers and JSON"| WasmRs
-    WasmRs --> TrekSession
-    TrekSession -->|"Polls Future"| GameMain
-    TrekSession -->|"Serializes"| StepResp
-    StepResp -->|"Reads telemetry"| State
+    Host -->|"HTTP GET / + ./trek.wasm + ./sst.doc"| UI
+    UI <-->|"trek_step() UTF-8 buffers &lt;-&gt; StepResponse JSON (hud, saves_updated, plaques_updated)"| Bridge
+    UI -.->|"trek_import_save(.trk) &amp; trek_set_coord_fixed(-f)"| Bridge
+    Bridge <-->|"Polls pinned Future &lt;-&gt; parks GameState at read_line / getch"| Engine
 
-    GameMain --> Setup & Reports & Moving & Battle & Events & Ai & Planets & Finish & Help
-    EngineTier -->|"Tokenizes input"| Scanner
-    EngineTier -->|"Console I/O and suspension"| Io
-    EngineTier -->|"Reads and mutates"| State
-    Scanner --> Io
-    Io --> State
-    State --> Rng
+    classDef pill fill:#dcfce7,stroke:#16a34a,color:#052e16;
+    classDef hub fill:#fef3c7,stroke:#d97706,color:#451a03;
+    classDef core fill:#f1f5f9,stroke:#475569,color:#0f172a;
+    class Launch,SessionEnd pill;
+    class PollHub hub;
+    class Foundation core;
 ```
 
-See the full diagram suite—including the inter-module call graph, step/coroutine sequence diagram, core data model, and turn-execution state machine—in [`docs/architecture.md`](file:///Users/nbrand/projects/trek/docs/architecture.md), [`docs/architecture.mmd`](file:///Users/nbrand/projects/trek/docs/architecture.mmd), and [`docs/architecture.pdf`](file:///Users/nbrand/projects/trek/docs/architecture.pdf).
+See the full 5-diagram architecture suite—including the end-to-end program flow, gameplay subsystem dispatch, coroutine step & WASM bridge sequence, core data model, turn-execution state machine, and module reference table—in [`docs/architecture.md`](docs/architecture.md), [`docs/architecture.mmd`](docs/architecture.mmd), and [`docs/architecture.pdf`](docs/architecture.pdf).
 
 ## Prerequisites
 
@@ -90,7 +93,7 @@ See the full diagram suite—including the inter-module call graph, step/corouti
 
 ## Makefile Tasks
 
-Use the provided [`Makefile`](file:///Users/nbrand/projects/trek/Makefile) for common workflows:
+Use the provided [`Makefile`](Makefile) for common workflows:
 
 | Command | Description |
 | --- | --- |
@@ -100,7 +103,7 @@ Use the provided [`Makefile`](file:///Users/nbrand/projects/trek/Makefile) for c
 | `make docker` (or `make docker-run`) | Build the Docker image and launch the container on port `8080` (`PORT=3000` to override) |
 | `make docker-build` | Build the `trek` Docker image |
 | `make docker-stop` | Stop the running `trek` Docker container |
-| `make wasm` | Compile `web/trek.wasm` via [`scripts/build_web.sh`](file:///Users/nbrand/projects/trek/scripts/build_web.sh) |
+| `make wasm` | Compile `web/trek.wasm` via [`scripts/build_web.sh`](scripts/build_web.sh) |
 | `make test` (or `make unit-test`) | Run all Cargo unit, integration, and regression tests |
 | `make check` | Run `cargo check` (native + `wasm32-unknown-unknown`) and `node --check web/app.js` |
 | `make clean` | Clean Cargo build artifacts and remove `web/trek.wasm` |
@@ -137,10 +140,11 @@ trek/
 ├── BUG_REPORT.md            # QA bug findings and verified fixes
 ├── c_src/                   # Original Tom Almy Super Star Trek ANSI C sources
 ├── assets/                  # Reference documentation (sst.doc)
-├── docs/                    # Architecture documentation and diagrams
-│   ├── architecture.md      # All 5 Mermaid architecture and state diagrams
-│   ├── architecture.mmd     # Standalone Mermaid flowchart source
-│   └── architecture.pdf     # Vector landscape PDF export of all diagrams
+├── docs/                    # Architecture documentation, diagrams, and screenshot
+│   ├── architecture.md      # 5-diagram Mermaid architecture suite + module reference
+│   ├── architecture.mmd     # Standalone end-to-end program flow Mermaid source
+│   ├── architecture.pdf     # Vector landscape PDF export of the 5-diagram suite
+│   └── super-star-trek.png  # Browser UI and Bridge Telemetry HUD screenshot
 ├── scripts/
 │   └── build_web.sh         # Builds wasm32-unknown-unknown release & copies web/trek.wasm
 ├── src/                     # Rust game engine, WASM bridge, and HTTP server
@@ -181,18 +185,18 @@ trek/
 
 The project was built and verified with dedicated conversion, gameplay QA, and test-authoring passes:
 
-- **Bug Tracking**: Issues uncovered during testing and their fixes are documented in [`BUG_REPORT.md`](file:///Users/nbrand/projects/trek/BUG_REPORT.md).
+- **Bug Tracking**: Issues uncovered during testing and their fixes are documented in [`BUG_REPORT.md`](BUG_REPORT.md).
 - **Test Suite (`cargo test --no-fail-fast`)**: **70 tests** covering unit internals (`src/lib.rs`) plus integration and regression suites across `tests/`:
-  - RNG & scanners ([`tests/rng_and_scanner_tests.rs`](file:///Users/nbrand/projects/trek/tests/rng_and_scanner_tests.rs))
-  - Setup & reports ([`tests/setup_and_reports_tests.rs`](file:///Users/nbrand/projects/trek/tests/setup_and_reports_tests.rs))
-  - Movement & navigation ([`tests/movement_and_navigation_tests.rs`](file:///Users/nbrand/projects/trek/tests/movement_and_navigation_tests.rs))
-  - Battle & combat ([`tests/battle_and_combat_tests.rs`](file:///Users/nbrand/projects/trek/tests/battle_and_combat_tests.rs))
-  - Events & AI ([`tests/events_and_ai_tests.rs`](file:///Users/nbrand/projects/trek/tests/events_and_ai_tests.rs))
-  - Planets & special commands ([`tests/planets_and_special_tests.rs`](file:///Users/nbrand/projects/trek/tests/planets_and_special_tests.rs))
-  - Bug regression tests ([`tests/regression_bugs_tests.rs`](file:///Users/nbrand/projects/trek/tests/regression_bugs_tests.rs))
+  - RNG & scanners ([`tests/rng_and_scanner_tests.rs`](tests/rng_and_scanner_tests.rs))
+  - Setup & reports ([`tests/setup_and_reports_tests.rs`](tests/setup_and_reports_tests.rs))
+  - Movement & navigation ([`tests/movement_and_navigation_tests.rs`](tests/movement_and_navigation_tests.rs))
+  - Battle & combat ([`tests/battle_and_combat_tests.rs`](tests/battle_and_combat_tests.rs))
+  - Events & AI ([`tests/events_and_ai_tests.rs`](tests/events_and_ai_tests.rs))
+  - Planets & special commands ([`tests/planets_and_special_tests.rs`](tests/planets_and_special_tests.rs))
+  - Bug regression tests ([`tests/regression_bugs_tests.rs`](tests/regression_bugs_tests.rs))
 
 ## Appendix
 
 - **Original Reference & Mac OS C Source**: [Super Star Trek — Tom Almy (https://almy.us/sst.html)](https://almy.us/sst.html)
-- **Game Manual**: [`assets/sst.doc`](file:///Users/nbrand/projects/trek/assets/sst.doc) (served in-browser at [`web/sst.doc`](file:///Users/nbrand/projects/trek/web/sst.doc))
-- **Architecture Diagrams**: [`docs/architecture.md`](file:///Users/nbrand/projects/trek/docs/architecture.md), [`docs/architecture.mmd`](file:///Users/nbrand/projects/trek/docs/architecture.mmd), and [`docs/architecture.pdf`](file:///Users/nbrand/projects/trek/docs/architecture.pdf)
+- **Game Manual**: [`assets/sst.doc`](assets/sst.doc) (served in-browser at [`web/sst.doc`](web/sst.doc))
+- **Architecture Diagrams**: [`docs/architecture.md`](docs/architecture.md), [`docs/architecture.mmd`](docs/architecture.mmd), and [`docs/architecture.pdf`](docs/architecture.pdf)
